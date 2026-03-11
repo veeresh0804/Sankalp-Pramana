@@ -1,0 +1,42 @@
+steps:
+  # Step 1: Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/ai-3d-backend'
+      - '.'
+    timeout: '600s'
+
+  # Step 2: Push to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/ai-3d-backend'
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'ai-3d-backend'
+      - '--image=gcr.io/$PROJECT_ID/ai-3d-backend'
+      - '--platform=managed'
+      - '--region=us-central1'
+      - '--allow-unauthenticated'
+      - '--memory=2Gi'
+      - '--cpu=2'
+      - '--min-instances=0'
+      - '--max-instances=3'
+      - '--timeout=120'
+      - '--set-env-vars=GCS_PROJECT_ID=$PROJECT_ID,GCS_BUCKET_NAME=ai-3d-models-bucket,RETRIEVAL_SOURCES=sketchfab,polyhaven,mock'
+
+images:
+  - 'gcr.io/$PROJECT_ID/ai-3d-backend'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+timeout: '900s'
