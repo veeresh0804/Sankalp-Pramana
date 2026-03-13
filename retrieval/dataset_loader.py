@@ -1,3 +1,4 @@
+USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
 """
 retrieval/dataset_loader.py
 Real dataset connectors for Objaverse and Sketchfab.
@@ -211,6 +212,10 @@ _MOCK_CATALOGUE: List[Dict[str, Any]] = [
 
 def fetch_from_mock(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """Always-available offline fallback using the curated mock catalogue."""
+    if not USE_MOCK_DATA:
+        logger.info("[Mock] USE_MOCK_DATA disabled — skipping mock catalogue")
+        return []
+
     query_lower = query.lower()
     results = []
     for m in _MOCK_CATALOGUE:
@@ -248,7 +253,9 @@ def fetch_candidates(
     if sources is None:
         # Sketchfab + Poly Haven by default (fast, no large download)
         # Objaverse requires ~200 MB metadata download on first run
-        sources = ["sketchfab", "polyhaven", "mock"]
+        sources = ["sketchfab", "polyhaven"]
+        if USE_MOCK_DATA:
+            sources.append("mock")
 
     all_results: List[Dict[str, Any]] = []
     seen_urls: set[str] = set()
@@ -257,8 +264,10 @@ def fetch_candidates(
         "objaverse": fetch_from_objaverse,
         "sketchfab": fetch_from_sketchfab,
         "polyhaven": fetch_from_polyhaven,
-        "mock":      fetch_from_mock,
     }
+
+    if USE_MOCK_DATA:
+        source_fns["mock"] = fetch_from_mock
 
     for source in sources:
         fn = source_fns.get(source)

@@ -196,6 +196,47 @@ def visualize(request: VisualizeRequest):
     # --- PRATIBIMBAI DECISION ENGINE (THRESHOLD = 0.55) ---
     confidence = search_result["confidence"]
     explanation = search_result.get("description", "")
+
+    # Low-confidence guard: immediately prefer procedural scene generation over Box.glb
+    if confidence < THRESHOLD:
+        logger.info(f"[Decision] Confidence {confidence} < THRESHOLD {THRESHOLD}. Generating procedural scene.")
+        blueprint = generate_scene_blueprint(query, request.style, request.complexity)
+        latency = int((time.perf_counter() - t0) * 1000)
+
+        if blueprint:
+            scene_explanation = generate_explanation(query)
+            return VisualizeResponse(
+                success=True,
+                type="scene",
+                processingTime=latency,
+                source="generated",
+                data=blueprint,
+                explanation=scene_explanation
+            )
+
+        # Safety net: minimal primitive scene instead of Box.glb
+        logger.warning("[Decision] Scene generation failed at low confidence; returning minimal primitive scene.")
+        minimal_scene = {
+            "meta": {"title": "Fallback Scene"},
+            "environment": {"background": "#1a1a2e"},
+            "primitives": [
+                {
+                    "type": "box",
+                    "material": {"color": "#8ab4f8"},
+                    "transform": {"pos": [0, 0.5, 0], "rot": [0, 0, 0], "scale": [1, 1, 1]}
+                }
+            ],
+            "assets": []
+        }
+        scene_explanation = generate_explanation(query)
+        return VisualizeResponse(
+            success=True,
+            type="scene",
+            processingTime=latency,
+            source="generated",
+            data=minimal_scene,
+            explanation=scene_explanation
+        )
     
     # Decision: Return GLB if score >= THRESHOLD, else generate procedural scene
     # THRESHOLD = 0.55 per PratibimbAI specification
@@ -345,10 +386,7 @@ def _run_search_pipeline(concept: str, top_k: int) -> dict:
     confidence = round(best.get("final_score", best.get("clip_score", 0.5)), 3)
 
     if confidence < MIN_CONFIDENCE and FALLBACK_ENABLED:
-        logger.warning(f"[Pipeline] Low confidence ({confidence}) — using fallback model")
-        best["url"]    = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb"
-        best["name"]   = "Fallback Primitive"
-        best["format"] = "glb"
+        logger.warning(f"[Pipeline] Low confidence ({confidence}) — prefer procedural scene (no GLB override)")
 
     payload = {
         "concept":     concept,
