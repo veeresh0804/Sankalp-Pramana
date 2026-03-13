@@ -140,6 +140,8 @@ class VisualizeRequest(BaseModel):
     query:      str = Field(..., example="taj mahal", description="3D concept to visualize")
     style:      str = Field("realistic", description="Visual style")
     complexity: str = Field("medium", description="Scene complexity")
+    network:    Optional[str] = Field(None, description="Client-reported network quality: fast | slow")
+    dataSaver:  Optional[bool] = Field(False, description="Client data saver flag")
 
 
 class VisualizeResponse(BaseModel):
@@ -162,7 +164,7 @@ class VisualizeResponse(BaseModel):
 def root():
     """Health check — confirms the API is running."""
     return HealthResponse(
-        status="AI 3D Retrieval API is running ✅",
+        status="AI 3D Retrieval API is running ",
         version=APP_VERSION,
         cache=cache_stats(),
     )
@@ -189,6 +191,46 @@ def visualize(request: VisualizeRequest):
     
     if not query:
         raise HTTPException(status_code=422, detail="Query cannot be empty")
+
+    # Network-adaptive shortcut: skip retrieval if client reports slow network or data saver
+    if request.dataSaver or (request.network and request.network.lower() == "slow"):
+        logger.info(f"[Decision] Network/dataSaver shortcut activated (network={request.network}, dataSaver={request.dataSaver}) — generating scene directly.")
+        blueprint = generate_scene_blueprint(query, request.style, request.complexity)
+        latency = int((time.perf_counter() - t0) * 1000)
+
+        if blueprint:
+            scene_explanation = generate_explanation(query)
+            return VisualizeResponse(
+                success=True,
+                type="scene",
+                processingTime=latency,
+                source="generated",
+                data=blueprint,
+                explanation=scene_explanation
+            )
+
+        logger.warning("[Decision] Scene generation failed in network shortcut; returning minimal fallback scene.")
+        minimal_scene = {
+            "meta": {"title": "Fallback Scene"},
+            "environment": {"background": "#1a1a2e"},
+            "primitives": [
+                {
+                    "type": "box",
+                    "material": {"color": "#8ab4f8"},
+                    "transform": {"pos": [0, 0.5, 0], "rot": [0, 0, 0], "scale": [1, 1, 1]}
+                }
+            ],
+            "assets": []
+        }
+        scene_explanation = generate_explanation(query)
+        return VisualizeResponse(
+            success=True,
+            type="scene",
+            processingTime=latency,
+            source="generated",
+            data=minimal_scene,
+            explanation=scene_explanation
+        )
 
     # 1. Search Pipeline
     search_result = _run_search_pipeline(query, top_k=5)
