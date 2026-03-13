@@ -53,8 +53,8 @@ gcloud run deploy %SERVICE_NAME% ^
     --allow-unauthenticated ^
     --memory 2Gi ^
     --cpu 2 ^
-    --min-instances 0 ^
-    --max-instances 3 ^
+    --min-instances 1 ^
+    --max-instances 10 ^
     --timeout 120 ^
     --set-env-vars "GCS_BUCKET_NAME=ai-3d-models-bucket,GCS_PROJECT_ID=%PROJECT_ID%,RETRIEVAL_SOURCES=sketchfab,polyhaven,mock"
 :: NOTE: Manage SKETCHFAB_API_TOKEN and GEMINI_API_KEY via Cloud Run Console or Secret Manager

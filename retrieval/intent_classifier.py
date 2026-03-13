@@ -5,10 +5,9 @@ Categorizes queries (e.g., monument, science, furniture) to target the best retr
 """
 
 import logging
-import google.generativeai as genai
 from typing import Dict, List
 
-from config import GEMINI_API_KEY
+from ai.llm_client import generate, is_available
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +34,17 @@ Category:"""
 
 def classify_intent(query: str) -> str:
     """
-    Use Gemini to classify the user's search intent.
+    Use Gemini 2.5 Pro to classify the user's search intent.
     Returns the category name.
     """
-    if not GEMINI_API_KEY:
+    if not is_available():
         return "generic"
 
     try:
-        model = genai.GenerativeModel('models/gemini-1.5-flash')
-        response = model.generate_content(CLASSIFICATION_PROMPT.format(query=query))
+        prompt = CLASSIFICATION_PROMPT.format(query=query)
+        response = generate(prompt)
         
-        category = response.text.strip().lower()
+        category = response.strip().lower()
         
         # Validate category
         for valid_cat in INTENT_SOURCE_MAPPING.keys():

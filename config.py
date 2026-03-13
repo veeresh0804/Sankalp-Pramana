@@ -37,6 +37,13 @@ CLIP_THRESHOLD    = float(os.getenv("CLIP_THRESHOLD", "0.25"))
 # ──────────────────────────────────────────────
 TOP_K_CANDIDATES  = int(os.getenv("TOP_K_CANDIDATES", "10"))
 MIN_CONFIDENCE    = float(os.getenv("MIN_CONFIDENCE",  "0.3"))
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.80"))
+
+# PratibimbAI decision threshold for GLB vs Scene generation
+# If best model score >= THRESHOLD, return GLB; otherwise generate procedural scene
+THRESHOLD = float(os.getenv("THRESHOLD", "0.75"))
+
+DEEP_SEARCH_ENABLED  = os.getenv("DEEP_SEARCH_ENABLED", "true").lower() == "true"
 FALLBACK_ENABLED  = os.getenv("FALLBACK_ENABLED", "true").lower() == "true"
 
 # Comma-separated list of sources to query, in priority order.

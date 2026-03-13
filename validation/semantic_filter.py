@@ -1,15 +1,14 @@
 """
 validation/semantic_filter.py
 LLM-powered semantic filtering to remove irrelevant search candidates.
-Uses Gemini to judge if a model name/description matches the user's intent.
+Uses Gemini 2.5 Pro to judge if a model name/description matches the user's intent.
 """
 
 import json
 import logging
-import google.generativeai as genai
 from typing import List, Dict, Any
 
-from config import GEMINI_API_KEY
+from ai.llm_client import generate, is_available
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +28,10 @@ Rules:
 
 def filter_candidates(query: str, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Use Gemini to filter out irrelevant candidates.
+    Use Gemini 2.5 Pro to filter out irrelevant candidates.
     Returns a subset of the input list.
     """
-    if not GEMINI_API_KEY or not candidates:
+    if not is_available() or not candidates:
         return candidates
 
     try:
@@ -40,10 +39,11 @@ def filter_candidates(query: str, candidates: List[Dict[str, Any]]) -> List[Dict
         titles = [f"{i}: {c.get('name', 'Unnamed')}" for i, c in enumerate(candidates)]
         prompt = f"User Query: \"{query}\"\n\nCandidates:\n" + "\n".join(titles) + "\n\nRelevant indices:"
 
-        model = genai.GenerativeModel('models/gemini-1.5-flash', system_instruction=FILTER_SYSTEM_PROMPT)
-        response = model.generate_content(prompt)
+        text = generate(prompt, system_instruction=FILTER_SYSTEM_PROMPT)
         
-        text = response.text.strip()
+        if not text:
+            return candidates
+        
         # Extract JSON list from response
         if "[" in text and "]" in text:
             relevant_indices = json.loads(text[text.find("["):text.find("]")+1])

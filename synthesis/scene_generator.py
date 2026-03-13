@@ -1,6 +1,6 @@
 """
 synthesis/scene_generator.py
-Procedural 3D scene generation using Google Gemini.
+Procedural 3D scene generation using Gemini 2.5 Pro.
 Converts natural language prompts into SceneBlueprint JSON.
 """
 
@@ -8,37 +8,33 @@ from __future__ import annotations
 import json
 import logging
 import re
-import google.generativeai as genai
 from typing import Optional, Dict, Any
 
-from config import GEMINI_API_KEY, SCENE_GENERATOR_SYSTEM_PROMPT
+from ai.llm_client import generate, is_available
+from config import SCENE_GENERATOR_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-# Configure Gemini
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
-    logger.warning("[Synthesis] GEMINI_API_KEY not found. Procedural generation will be disabled.")
 
 def generate_scene_blueprint(query: str, style: str = "realistic", complexity: str = "medium") -> Optional[Dict[str, Any]]:
     """
-    Generate a SceneBlueprint JSON using Gemini.
+    Generate a SceneBlueprint JSON using Gemini 2.5 Pro.
     """
-    if not GEMINI_API_KEY:
-        logger.error("[Synthesis] Cannot generate scene: GEMINI_API_KEY missing.")
+    if not is_available():
+        logger.error("[Synthesis] Cannot generate scene: LLM client not available.")
         return None
 
     try:
-        model = genai.GenerativeModel('models/gemini-flash-latest', system_instruction=SCENE_GENERATOR_SYSTEM_PROMPT)
-        
         prompt = f"User request: \"{query}\" (Style: {style}, Complexity: {complexity})\n\nGenerate SceneBlueprint JSON following the schema and rules."
         
         logger.info(f"[Synthesis] Generating scene for: '{query}'")
-        response = model.generate_content(prompt)
+        text = generate(prompt, system_instruction=SCENE_GENERATOR_SYSTEM_PROMPT)
+        
+        if not text:
+            logger.error("[Synthesis] Empty response from LLM")
+            return None
         
         # Clean up the response (remove markdown if any)
-        text = response.text.strip()
         if text.startswith("```json"):
             text = text[len("```json"):]
         if text.endswith("```"):

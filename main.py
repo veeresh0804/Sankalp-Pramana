@@ -25,15 +25,15 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, MIN_CONFIDENCE, FALLBACK_ENABLED
+from config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, MIN_CONFIDENCE, CONFIDENCE_THRESHOLD, THRESHOLD, DEEP_SEARCH_ENABLED, FALLBACK_ENABLED
 from retrieval.search_models   import search_models
 from retrieval.intent_classifier import classify_intent, get_prioritized_sources
 from vector_search.embedding_index import semantic_search, initialize_index
 from validation.clip_validator  import validate_models, _load_clip
 from ranking.ranking_engine    import rank_models
-from rag.knowledge_engine      import generate_explanation
+from rag.explanation_engine     import generate_explanation
 from cache.cache_manager       import get as cache_get, set as cache_set, stats as cache_stats, clear as cache_clear
-from synthesis.scene_generator import generate_scene_blueprint
+from synthesis.scene_blueprint_generator import generate_scene_blueprint, validate_scene_blueprint
 from validation.semantic_filter import filter_candidates
 
 logging.basicConfig(
@@ -143,11 +143,16 @@ class VisualizeRequest(BaseModel):
 
 
 class VisualizeResponse(BaseModel):
+    """
+    Unified response schema for /visualize endpoint.
+    Strictly follows PratibimbAI architecture specification.
+    """
     success:        bool
-    type:           str  # 'glb' | 'procedural'
+    type:           str  # 'glb' | 'scene'
     data:           dict # SceneBlueprint or { "url": "..." }
-    processingTime: int
-    source:         str  # 'cache' | 'search' | 'synthesis'
+    explanation:    str = ""  # Educational explanation
+    processingTime: int   # Processing time in milliseconds
+    source:         str  # 'search' | 'generated'
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -187,46 +192,78 @@ def visualize(request: VisualizeRequest):
 
     # 1. Search Pipeline
     search_result = _run_search_pipeline(query, top_k=5)
+
+    # --- PRATIBIMBAI DECISION ENGINE (THRESHOLD = 0.55) ---
+    confidence = search_result["confidence"]
+    explanation = search_result.get("description", "")
     
-    # Check if we found a high-confidence model
-    # We consider it "found" if confidence is above MIN_CONFIDENCE and it's not the fallback box
-    is_real_model = (
-        search_result["confidence"] >= MIN_CONFIDENCE and 
+    # Decision: Return GLB if score >= THRESHOLD, else generate procedural scene
+    # THRESHOLD = 0.55 per PratibimbAI specification
+    is_above_threshold = (
+        confidence >= THRESHOLD and 
         "Box.glb" not in search_result["model_url"]
     )
 
-    if is_real_model:
+    if is_above_threshold:
+        logger.info(f"[Decision] Score {confidence} >= THRESHOLD {THRESHOLD}. Returning GLB.")
         latency = int((time.perf_counter() - t0) * 1000)
         return VisualizeResponse(
             success=True,
             type="glb",
             processingTime=latency,
-            source="search" if not search_result["cached"] else "cache",
-            data={"url": search_result["model_url"]}
+            source="search",
+            data={"url": search_result["model_url"]},
+            explanation=explanation
         )
 
-    # 2. Procedural Synthesis (Fallback)
-    logger.info(f"[API] No real model found for '{query}', generating procedural scene...")
+    # Tier 2: Search Extension (Score < THRESHOLD, but Deep Search is active)
+    if DEEP_SEARCH_ENABLED:
+        logger.info(f"[Decision] Score {confidence} < THRESHOLD {THRESHOLD}. Triggering Deep Search for '{query}'...")
+        from retrieval.search_models import deep_web_search
+        
+        deep_result = deep_web_search(query)
+        # Check if deep search found a better model above threshold
+        if deep_result and deep_result[0].get("final_score", 0) >= THRESHOLD:
+            best_deep = deep_result[0]
+            logger.info(f"[DeepSearch] Found match above threshold: '{best_deep['name']}' ({best_deep['final_score']})")
+            latency = int((time.perf_counter() - t0) * 1000)
+            return VisualizeResponse(
+                success=True,
+                type="glb",
+                processingTime=latency,
+                source="search",
+                data={"url": best_deep["url"]},
+                explanation=explanation
+            )
+
+    # Tier 3: Procedural Scene Generation (Score < THRESHOLD, Deep Search failed)
+    reason = f"Top model scored {confidence}, below THRESHOLD of {THRESHOLD}."
+    logger.info(f"[Decision] {reason} Generating procedural scene.")
     blueprint = generate_scene_blueprint(query, request.style, request.complexity)
     
     latency = int((time.perf_counter() - t0) * 1000)
 
     if blueprint:
+        # Generate explanation for the procedural scene
+        scene_explanation = generate_explanation(query)
         return VisualizeResponse(
             success=True,
-            type="procedural",
+            type="scene",
             processingTime=latency,
-            source="synthesis",
-            data=blueprint
+            source="generated",
+            data=blueprint,
+            explanation=scene_explanation
         )
     
-    # 3. Absolute Fallback (if synthesis fails)
+    # Absolute Fallback (if synthesis fails) - return the low-confidence GLB
+    logger.warning(f"[Fallback] Scene generation failed. Returning fallback GLB.")
     return VisualizeResponse(
         success=True,
         type="glb",
         processingTime=latency,
         source="search",
-        data={"url": search_result["model_url"]} # Return the fallback GLB
+        data={"url": search_result["model_url"]},
+        explanation=explanation
     )
 
 

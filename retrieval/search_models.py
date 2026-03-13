@@ -54,6 +54,45 @@ def search_models(concept: str, top_k: int = TOP_K_CANDIDATES, sources: List[str
     return candidates
 
 
+def deep_web_search(concept: str) -> List[Dict[str, Any]]:
+    """
+    Experimental deep search that tries broader queries and extra sources.
+    Triggered when standard search confidence is < 0.80.
+    """
+    logger.info(f"[DeepSearch] Aggressive retrieval for: '{concept}'")
+    
+    # Try multiple query variants
+    variants = [
+        concept,
+        f"{concept} 3d model",
+        f"{concept} low poly",
+        f"realistic {concept}"
+    ]
+    
+    all_deep_candidates = []
+    seen = set()
+    
+    for var in variants:
+        # Increase top_k for deep search
+        candidates = search_models(var, top_k=20)
+        for c in candidates:
+            if c["url"] not in seen:
+                seen.add(c["url"])
+                all_deep_candidates.append(c)
+                
+    if not all_deep_candidates:
+        return []
+
+    # In a production system, we would re-run CLIP and Ranking here.
+    # For this implementation, we simulate a 'scored' result set.
+    # We sort by quality + keyword_score
+    for c in all_deep_candidates:
+        c["final_score"] = round((c.get("keyword_score", 0) * 0.4) + (c.get("quality", 0) * 0.6), 3)
+    
+    all_deep_candidates.sort(key=lambda x: x["final_score"], reverse=True)
+    return all_deep_candidates
+
+
 def _hardcoded_fallback(concept: str) -> List[Dict[str, Any]]:
     """Last-resort fallback so the API never returns empty-handed."""
     return [{

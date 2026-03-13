@@ -4,14 +4,15 @@ RAG (Retrieval-Augmented Generation) explanation engine.
 
 Phase 1: curated knowledge base (works offline, no API keys needed).
 Phase 2: Wikipedia / LangChain integration (see stub at bottom).
-Phase 3: LLM-powered (OpenAI / Vertex AI) — enabled via USE_LLM_RAG in config.
+Phase 3: LLM-powered (Gemini 2.5 Pro) — enabled via USE_LLM_RAG in config.
 """
 
 from __future__ import annotations
 import logging
 from typing import Optional
 
-from config import USE_LLM_RAG, OPENAI_API_KEY
+from config import USE_LLM_RAG
+from ai.llm_client import generate, is_available
 
 logger = logging.getLogger(__name__)
 
@@ -71,24 +72,18 @@ def _wikipedia_lookup(concept: str) -> Optional[str]:
 
 
 def _llm_generate(concept: str) -> Optional[str]:
-    """Generate explanation using OpenAI GPT (optional — requires OPENAI_API_KEY)."""
-    if not USE_LLM_RAG or not OPENAI_API_KEY:
+    """Generate explanation using Gemini 2.5 Pro (optional — requires GEMINI_API_KEY)."""
+    if not USE_LLM_RAG or not is_available():
         return None
     try:
-        import openai
-        openai.api_key = OPENAI_API_KEY
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"Provide a concise educational description (2-3 sentences) "
-                    f"of '{concept}' suitable for a 3D interactive learning app."
-                )
-            }],
-            max_tokens=150,
+        prompt = (
+            f"Provide a concise educational description (2-3 sentences) "
+            f"of '{concept}' suitable for a 3D interactive learning app."
         )
-        return response["choices"][0]["message"]["content"].strip()
+        result = generate(prompt)
+        if result:
+            return result
+        return None
     except Exception as e:
         logger.warning(f"[RAG] LLM generation failed: {e}")
         return None
