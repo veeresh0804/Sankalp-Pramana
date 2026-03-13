@@ -27,11 +27,14 @@ from pydantic import BaseModel, Field
 
 from config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, MIN_CONFIDENCE, FALLBACK_ENABLED
 from retrieval.search_models   import search_models
+from retrieval.intent_classifier import classify_intent, get_prioritized_sources
 from vector_search.embedding_index import semantic_search, initialize_index
 from validation.clip_validator  import validate_models, _load_clip
 from ranking.ranking_engine    import rank_models
 from rag.knowledge_engine      import generate_explanation
 from cache.cache_manager       import get as cache_get, set as cache_set, stats as cache_stats, clear as cache_clear
+from synthesis.scene_generator import generate_scene_blueprint
+from validation.semantic_filter import filter_candidates
 
 logging.basicConfig(
     level=logging.INFO,
@@ -133,6 +136,20 @@ class HealthResponse(BaseModel):
     cache:   dict
 
 
+class VisualizeRequest(BaseModel):
+    query:      str = Field(..., example="taj mahal", description="3D concept to visualize")
+    style:      str = Field("realistic", description="Visual style")
+    complexity: str = Field("medium", description="Scene complexity")
+
+
+class VisualizeResponse(BaseModel):
+    success:        bool
+    type:           str  # 'glb' | 'procedural'
+    data:           dict # SceneBlueprint or { "url": "..." }
+    processingTime: int
+    source:         str  # 'cache' | 'search' | 'synthesis'
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Routes
 # ──────────────────────────────────────────────────────────────────────────────
@@ -148,40 +165,98 @@ def root():
 
 @app.post("/search_model", response_model=SearchResponse, tags=["AI Pipeline"])
 def search_model(request: SearchRequest):
-    """
-    Core 3D model retrieval endpoint.
+    """Legacy endpoint for 3D model retrieval."""
+    concept = request.concept.strip()
+    result = _run_search_pipeline(concept, request.top_k)
+    return SearchResponse(**result)
 
-    Given a natural-language concept (e.g. "human heart") the pipeline:
-    - Searches via keyword + semantic vector similarity
-    - Validates candidates with CLIP
-    - Ranks by composite confidence score
-    - Generates an educational RAG explanation
+
+@app.post("/visualize", response_model=VisualizeResponse, tags=["AI Pipeline"])
+def visualize(request: VisualizeRequest):
     """
-    # Readiness guard — models load in background, may take ~20s on cold start
+    Unified visualization endpoint.
+    1. Search for a real GLB model.
+    2. If not found (or low confidence), generate a procedural SceneBlueprint.
+    3. Return in the VisualizeResponse format.
+    """
+    t0 = time.perf_counter()
+    query = request.query.strip()
+    
+    if not query:
+        raise HTTPException(status_code=422, detail="Query cannot be empty")
+
+    # 1. Search Pipeline
+    search_result = _run_search_pipeline(query, top_k=5)
+    
+    # Check if we found a high-confidence model
+    # We consider it "found" if confidence is above MIN_CONFIDENCE and it's not the fallback box
+    is_real_model = (
+        search_result["confidence"] >= MIN_CONFIDENCE and 
+        "Box.glb" not in search_result["model_url"]
+    )
+
+    if is_real_model:
+        latency = int((time.perf_counter() - t0) * 1000)
+        return VisualizeResponse(
+            success=True,
+            type="glb",
+            processingTime=latency,
+            source="search" if not search_result["cached"] else "cache",
+            data={"url": search_result["model_url"]}
+        )
+
+    # 2. Procedural Synthesis (Fallback)
+    logger.info(f"[API] No real model found for '{query}', generating procedural scene...")
+    blueprint = generate_scene_blueprint(query, request.style, request.complexity)
+    
+    latency = int((time.perf_counter() - t0) * 1000)
+
+    if blueprint:
+        return VisualizeResponse(
+            success=True,
+            type="procedural",
+            processingTime=latency,
+            source="synthesis",
+            data=blueprint
+        )
+    
+    # 3. Absolute Fallback (if synthesis fails)
+    return VisualizeResponse(
+        success=True,
+        type="glb",
+        processingTime=latency,
+        source="search",
+        data={"url": search_result["model_url"]} # Return the fallback GLB
+    )
+
+
+def _run_search_pipeline(concept: str, top_k: int) -> dict:
+    """Internal helper to run the full retrieval + validation + ranking pipeline."""
+    t0 = time.perf_counter()
+
+    # Readiness guard — models load in background
     if not _models_ready:
         raise HTTPException(
             status_code=503,
             detail="AI models are loading, please retry in ~20 seconds"
         )
 
-    concept = request.concept.strip()
-    if not concept:
-        raise HTTPException(status_code=422, detail="Concept cannot be empty")
-
-    t0 = time.perf_counter()
-
     # ── 1. Cache check ──────────────────────────────────────────────────────
     cached = cache_get(concept)
     if cached:
         cached["latency_ms"] = round((time.perf_counter() - t0) * 1000, 2)
         cached["cached"] = True
-        return SearchResponse(**cached)
+        return cached
 
-    # ── 2. Dual-source candidate retrieval ──────────────────────────────────
-    logger.info(f"[API] New request: '{concept}'")
+    # ── 2. Intent Classification (NEW) ──────────────────────────────────────
+    intent = classify_intent(concept)
+    sources = get_prioritized_sources(intent)
 
-    keyword_candidates = search_models(concept)
-    vector_candidates  = semantic_search(concept, top_k=request.top_k)
+    # ── 3. Targeted candidate retrieval ─────────────────────────────────────
+    logger.info(f"[Pipeline] Processing: '{concept}' (Intent: {intent}, Sources: {sources})")
+
+    keyword_candidates = search_models(concept, sources=sources)
+    vector_candidates  = semantic_search(concept, top_k=top_k)
 
     # Merge & deduplicate by URL
     seen: set[str] = set()
@@ -194,20 +269,35 @@ def search_model(request: SearchRequest):
     if not all_candidates:
         if not FALLBACK_ENABLED:
             raise HTTPException(status_code=404, detail=f"No models found for '{concept}'")
-        logger.warning(f"[API] No candidates — using fallback for '{concept}'")
+        logger.warning(f"[Pipeline] No candidates — using fallback for '{concept}'")
         all_candidates = [{
             "name":          "Generic 3D Object",
-            "url":           "https://storage.googleapis.com/ai-3d-models-bucket/fallback_cube.glb",
+            "url":           "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
             "format":        "glb",
             "quality":       0.3,
             "keyword_score": 0.0,
             "vector_score":  0.0,
         }]
 
-    # ── 3. CLIP validation ──────────────────────────────────────────────────
+
+    # ── 3. LLM Semantic Filtering (NEW) ─────────────────────────────────────
+    all_candidates = filter_candidates(concept, all_candidates)
+
+    if not all_candidates:
+        # Fallback if filter removed everything
+        all_candidates = [{
+            "name":          "Generic 3D Object",
+            "url":           "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
+            "format":        "glb",
+            "quality":       0.3,
+            "keyword_score": 0.0,
+            "vector_score":  0.0,
+        }]
+
+    # ── 4. CLIP validation ──────────────────────────────────────────────────
     validated = validate_models(all_candidates, concept)
 
-    # ── 4. Ranking ──────────────────────────────────────────────────────────
+    # ── 5. Ranking ──────────────────────────────────────────────────────────
     best = rank_models(validated)
 
     # ── 5. RAG explanation ──────────────────────────────────────────────────
@@ -218,8 +308,8 @@ def search_model(request: SearchRequest):
     confidence = round(best.get("final_score", best.get("clip_score", 0.5)), 3)
 
     if confidence < MIN_CONFIDENCE and FALLBACK_ENABLED:
-        logger.warning(f"[API] Low confidence ({confidence}) — using fallback model")
-        best["url"]    = "https://storage.googleapis.com/ai-3d-models-bucket/fallback_cube.glb"
+        logger.warning(f"[Pipeline] Low confidence ({confidence}) — using fallback model")
+        best["url"]    = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb"
         best["name"]   = "Fallback Primitive"
         best["format"] = "glb"
 
@@ -235,8 +325,7 @@ def search_model(request: SearchRequest):
     }
 
     cache_set(concept, payload)
-    logger.info(f"[API] Done in {latency}ms — model: {best.get('name')} confidence: {confidence}")
-    return SearchResponse(**payload)
+    return payload
 
 
 @app.get("/models", tags=["Utility"])

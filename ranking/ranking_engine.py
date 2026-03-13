@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 # Weighted blend of individual scores
 _WEIGHTS = {
-    "clip_score":    0.45,   # visual-semantic alignment
-    "vector_score":  0.30,   # semantic embedding similarity
-    "keyword_score": 0.15,   # fast keyword match
-    "quality":       0.10,   # dataset metadata quality flag
+    "clip_score":    0.50,   # visual-semantic alignment
+    "vector_score":  0.35,   # semantic embedding similarity
+    "keyword_score": 0.10,   # fast keyword match
+    "quality":       0.05,   # dataset metadata quality flag
 }
 
 
@@ -27,6 +27,11 @@ def _composite_score(model: Dict[str, Any]) -> float:
         # Clamp to [0, 1]
         value = max(0.0, min(1.0, float(value)))
         total += weight * value
+    
+    # Penalize placeholder/mock models so real Sketchfab models always win
+    if model.get("source") == "mock" or model.get("source") == "fallback":
+        total -= 0.50  # Heavy penalty
+        
     return round(total, 4)
 
 
@@ -40,7 +45,7 @@ def rank_models(candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
         logger.warning("[Ranking] No candidates to rank — returning fallback model")
         return {
             "name":        "Fallback Primitive",
-            "url":         "https://storage.googleapis.com/ai-3d-models-bucket/fallback_cube.glb",
+            "url":         "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
             "format":      "glb",
             "final_score": 0.0,
         }

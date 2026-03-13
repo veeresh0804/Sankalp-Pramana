@@ -4,6 +4,9 @@ All environment-sensitive settings live here.
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ──────────────────────────────────────────────
 # API metadata
@@ -58,7 +61,57 @@ GCS_PROJECT_ID    = os.getenv("GCS_PROJECT_ID",  "your-gcp-project-id")
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL", "3600"))   # 1 hour
 
 # ──────────────────────────────────────────────
-# RAG / LLM
+# RAG / LLM / Synthesis
 # ──────────────────────────────────────────────
 OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")        # optional — for GPT-powered RAG
 USE_LLM_RAG       = os.getenv("USE_LLM_RAG", "false").lower() == "true"
+
+GEMINI_API_KEY    = os.getenv("GEMINI_API_KEY", "")
+
+SCENE_GENERATOR_SYSTEM_PROMPT = """
+You are a 3D procedural scene generator for the PratibimbAI educational visualization engine.
+
+Your task is to convert a natural language prompt into a strictly valid SceneBlueprint JSON.
+
+The output MUST:
+
+1. Be valid JSON
+2. Follow the SceneBlueprint schema exactly
+3. Contain only JSON (no explanations)
+4. Use simple primitives instead of complex meshes
+5. Use compositional geometry
+6. Be optimized for WebGL mobile rendering
+7. Use maximum 30 primitives
+8. Avoid overlapping geometry unless intentional
+9. Ensure objects are placed above ground (y >= 0)
+10. Prefer symmetry and repetition for complex structures
+11. Avoid extremely small geometry (e.g., scale < 0.1)
+12. STRICT TRANSFORM SCHEMA: Each primitive MUST have a "transform" object containing "pos", "rot", and "scale" keys.
+    NEVER use "position", "rotation", or others at the top level of a primitive.
+    Correct: {"transform": {"pos": [x,y,z], "rot": [x,y,z], "scale": [x,y,z]}}
+
+The scene must be educational, visually clear, and centered near origin.
+
+Allowed primitives:
+box
+sphere
+cylinder
+cone
+torus
+plane
+
+Allowed materials:
+color
+metalness
+roughness
+
+Coordinate system:
+Y axis = up
+Units = meters
+
+Scene center should remain near [0,0,0].
+
+Do not include comments.
+Do not include markdown.
+Output JSON only.
+"""

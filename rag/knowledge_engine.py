@@ -56,7 +56,10 @@ def _wikipedia_lookup(concept: str) -> Optional[str]:
     """Fetch a summary from Wikipedia (requires network + wikipedia-api package)."""
     try:
         import wikipediaapi
-        wiki = wikipediaapi.Wikipedia("en")
+        wiki = wikipediaapi.Wikipedia(
+            language='en',
+            user_agent='AI-3D-Visualizer/1.0 (research project)'
+        )
         page = wiki.page(concept)
         if page.exists():
             return page.summary[:600]  # First ~600 chars

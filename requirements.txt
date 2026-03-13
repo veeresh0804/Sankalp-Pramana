@@ -15,16 +15,15 @@ faiss-cpu>=1.8.0
 # AI / ML — CLIP Validation
 # ──────────────────────────────────────────────
 open-clip-torch>=2.24.0
-torch>=2.0.0
 Pillow>=10.0.0
 
-# ──────────────────────────────────────────────
-# RAG (optional — comment out if not using LLM)
-# ──────────────────────────────────────────────
-langchain>=0.1.0
+# CPU-only PyTorch optimization for Cloud Run
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2+cpu
+torchvision==0.17.2+cpu
 
 # ──────────────────────────────────────────────
-# Wikipedia RAG (optional)
+# Wikipedia RAG
 # ──────────────────────────────────────────────
 Wikipedia-API>=0.6.0
 
@@ -38,10 +37,14 @@ google-cloud-storage>=2.14.0
 # ──────────────────────────────────────────────
 requests>=2.31.0            # Sketchfab + Poly Haven HTTP calls
 httpx>=0.27.0               # async-ready HTTP (future use)
-objaverse>=0.1.7            # Objaverse 800k+ 3D objects (Allen AI)
+
+# ──────────────────────────────────────────────
+# Synthesis / LLM (Gemini)
+# ──────────────────────────────────────────────
+google-generativeai>=0.4.0
 
 # ──────────────────────────────────────────────
 # Utilities
 # ──────────────────────────────────────────────
-numpy>=1.26.0
+numpy<2.0.0
 python-dotenv>=1.0.0

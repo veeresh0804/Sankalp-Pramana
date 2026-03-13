@@ -60,7 +60,7 @@ def _build_default_index():
     index.add(embeddings)
 
     meta = [{"name": m["name"], "url": m["url"], "format": m["format"],
-             "quality": m["quality"]} for m in _MOCK_DATASET]
+             "quality": m["quality"], "source": "mock"} for m in _MOCK_DATASET]
 
     return index, meta
 
@@ -125,8 +125,8 @@ def semantic_search(concept: str, top_k: int = TOP_K_CANDIDATES) -> List[Dict[st
     Requires initialize_index() to have been called at app startup.
     Each result: {name, url, format, quality, vector_score}
     """
-    if not _ready:
-        logger.warning("[VectorSearch] Index not ready — returning empty (startup still in progress?)")
+    if not _ready or _model is None:
+        logger.warning("[VectorSearch] Index or model not ready yet — returning empty")
         return []
 
     try:

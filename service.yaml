@@ -17,7 +17,7 @@ spec:
       containerConcurrency: 80
       timeoutSeconds: 120
       containers:
-        - image: gcr.io/YOUR_PROJECT_ID/ai-3d-backend
+        - image: gcr.io/ai-3d-visualizer/ai-3d-backend
           ports:
             - containerPort: 8080
           resources:
@@ -28,7 +28,7 @@ spec:
             - name: GCS_BUCKET_NAME
               value: "ai-3d-models-bucket"
             - name: GCS_PROJECT_ID
-              value: "YOUR_PROJECT_ID"
+              value: "ai-3d-visualizer"
             - name: RETRIEVAL_SOURCES
               value: "sketchfab,polyhaven,mock"
             - name: TOP_K_CANDIDATES
@@ -37,9 +37,8 @@ spec:
               value: "0.3"
             - name: CACHE_TTL
               value: "3600"
-            # Add your Sketchfab token as a Secret Manager secret in production
-            # - name: SKETCHFAB_API_TOKEN
-            #   valueFrom:
-            #     secretKeyRef:
-            #       name: sketchfab-token
-            #       key: latest
+            # API Keys
+            - name: SKETCHFAB_API_TOKEN
+              value: "07e3ec9c1c5943968b4ad234bccb595a"
+            - name: GEMINI_API_KEY
+              value: "AIzaSyBJVFU15MZwUteCAGZuo6ICfqzaVwsWJHU"

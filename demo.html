@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 3D Backend Visualizer Demo</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px;
+        }
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card);
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        h1 { margin-top: 0; color: var(--primary); }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: white;
+            font-size: 16px;
+        }
+        button {
+            padding: 12px 24px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+        button:disabled { background: #475569; cursor: not-allowed; }
+        pre {
+            background: #000;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            border: 1px solid #334155;
+            font-size: 14px;
+            color: #10b981;
+        }
+        .status { margin-top: 10px; font-size: 14px; color: #94a3b8; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>3D Concept Visualizer</h1>
+        <p>Enter a concept to retrieve a 3D model or synthesize a scene.</p>
+        
+        <div class="input-group">
+            <input type="text" id="query" placeholder="e.g. taj mahal, solar system, human heart">
+            <button id="sendBtn" onclick="send()">Retrieve 3D</button>
+        </div>
+        
+        <div id="status" class="status"></div>
+        <pre id="output">// Results will appear here...</pre>
+    </div>
+
+    <script>
+        // Replace with your actual deployed URL
+        const API_URL = "https://ai-3d-backend-526063550551.us-central1.run.app/visualize";
+
+        async function send() {
+            const queryInput = document.getElementById("query");
+            const output = document.getElementById("output");
+            const btn = document.getElementById("sendBtn");
+            const status = document.getElementById("status");
+
+            if (!queryInput.value.trim()) return;
+
+            btn.disabled = true;
+            status.textContent = "Processing pipeline (Intent -> Retrieval -> Filtering -> CLIP -> Ranking)...";
+            output.textContent = "// Loading...";
+
+            try {
+                const startTime = performance.now();
+                const res = await fetch(API_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        query: queryInput.value,
+                        style: "realistic",
+                        complexity: "medium"
+                    })
+                });
+
+                const data = await res.json();
+                const endTime = performance.now();
+                
+                status.textContent = `Completed in ${Math.round(endTime - startTime)}ms`;
+                output.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                status.textContent = "Error: Could not reach backend.";
+                output.textContent = "// Error: " + err.message;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // Allow Enter key to trigger send
+        document.getElementById("query").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") send();
+        });
+    </script>
+
+</body>
+</html>

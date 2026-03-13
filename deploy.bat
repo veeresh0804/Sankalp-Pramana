@@ -57,6 +57,7 @@ gcloud run deploy %SERVICE_NAME% ^
     --max-instances 3 ^
     --timeout 120 ^
     --set-env-vars "GCS_BUCKET_NAME=ai-3d-models-bucket,GCS_PROJECT_ID=%PROJECT_ID%,RETRIEVAL_SOURCES=sketchfab,polyhaven,mock"
+:: NOTE: Manage SKETCHFAB_API_TOKEN and GEMINI_API_KEY via Cloud Run Console or Secret Manager
 IF ERRORLEVEL 1 goto :error
 
 :: Step 5 — Print the live URL

@@ -29,85 +29,10 @@ SKETCHFAB_API_BASE  = "https://api.sketchfab.com/v3"
 
 def fetch_from_objaverse(query: str, limit: int = 10) -> List[Dict[str, Any]]:
     """
-    Search Objaverse (Allen AI) — 800k+ free, annotated 3D objects.
-
-    Uses the `objaverse` Python package which provides metadata + download URLs.
-    No API key required.
-
-    Install: pip install objaverse
-    Docs:    https://objaverse.allenai.org/
+    Search Objaverse — DISABLED in V2 optimization to reduce container size.
     """
-    try:
-        import objaverse
-
-        logger.info(f"[Objaverse] Searching for: '{query}'")
-
-        # Load all annotations (cached locally after first download ~200 MB)
-        annotations = objaverse.load_annotations()
-
-        # Filter by query keyword match against name/tags/description
-        query_lower = query.lower()
-        matches: List[Dict[str, Any]] = []
-
-        for uid, meta in annotations.items():
-            name        = (meta.get("name") or "").lower()
-            description = (meta.get("description") or "").lower()
-            tags        = " ".join(t.get("name", "") for t in meta.get("tags", [])).lower()
-            combined    = f"{name} {description} {tags}"
-
-            score = _score_text(query_lower, combined)
-            if score > 0:
-                matches.append({
-                    "uid":    uid,
-                    "name":   meta.get("name", uid),
-                    "score":  score,
-                    "meta":   meta,
-                })
-
-            if len(matches) >= limit * 5:   # pre-filter pool
-                break
-
-        # Sort by score and take top `limit`
-        matches.sort(key=lambda x: x["score"], reverse=True)
-        top = matches[:limit]
-
-        if not top:
-            logger.warning(f"[Objaverse] No results for '{query}'")
-            return []
-
-        # Resolve download URLs for top hits
-        uids       = [m["uid"] for m in top]
-        url_map    = objaverse.load_objects(uids)   # returns {uid: local_path}
-
-        results: List[Dict[str, Any]] = []
-        for m in top:
-            uid  = m["uid"]
-            meta = m["meta"]
-            # Build a public URL — Objaverse hosts on S3 / HuggingFace
-            public = (
-                f"https://huggingface.co/datasets/allenai/objaverse/resolve/main/"
-                f"glbs/{uid[:2]}/{uid}.glb"
-            )
-            results.append({
-                "name":          meta.get("name", uid),
-                "url":           public,
-                "format":        "glb",
-                "quality":       min(1.0, meta.get("viewCount", 0) / 10000 + 0.5),
-                "keyword_score": m["score"],
-                "vector_score":  0.0,
-                "source":        "objaverse",
-                "uid":           uid,
-            })
-
-        logger.info(f"[Objaverse] Returned {len(results)} results for '{query}'")
-        return results
-
-    except ImportError:
-        logger.warning("[Objaverse] Package not installed — run: pip install objaverse")
-        return []
-    except Exception as e:
-        logger.error(f"[Objaverse] Error: {e}")
-        return []
+    # logger.info(f"[Objaverse] Search skipped (uninstalled)")
+    return []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -269,18 +194,18 @@ def fetch_from_polyhaven(query: str, limit: int = 5) -> List[Dict[str, Any]]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 _MOCK_CATALOGUE: List[Dict[str, Any]] = [
-    {"name": "F1 Racing Car",    "tags": ["f1", "car", "race", "formula one"],     "url": "https://storage.googleapis.com/ai-3d-models-bucket/f1_car.glb",       "format": "glb", "quality": 0.95},
-    {"name": "Human Heart",      "tags": ["heart", "anatomy", "organ", "medical"], "url": "https://storage.googleapis.com/ai-3d-models-bucket/human_heart.glb",   "format": "glb", "quality": 0.90},
-    {"name": "Taj Mahal",        "tags": ["taj mahal", "monument", "india"],       "url": "https://storage.googleapis.com/ai-3d-models-bucket/taj_mahal.glb",     "format": "glb", "quality": 0.88},
-    {"name": "Fighter Jet",      "tags": ["jet", "fighter", "aircraft", "plane"],  "url": "https://storage.googleapis.com/ai-3d-models-bucket/fighter_jet.glb",   "format": "glb", "quality": 0.87},
-    {"name": "Human Brain",      "tags": ["brain", "neuron", "anatomy", "medical"],"url": "https://storage.googleapis.com/ai-3d-models-bucket/human_brain.glb",   "format": "glb", "quality": 0.91},
-    {"name": "Solar System",     "tags": ["solar system", "planet", "space"],      "url": "https://storage.googleapis.com/ai-3d-models-bucket/solar_system.glb",  "format": "glb", "quality": 0.85},
-    {"name": "DNA Helix",        "tags": ["dna", "helix", "biology", "molecule"],  "url": "https://storage.googleapis.com/ai-3d-models-bucket/dna_helix.glb",     "format": "glb", "quality": 0.89},
-    {"name": "Eiffel Tower",     "tags": ["eiffel", "tower", "paris", "france"],   "url": "https://storage.googleapis.com/ai-3d-models-bucket/eiffel_tower.glb",  "format": "glb", "quality": 0.86},
-    {"name": "Human Skeleton",   "tags": ["skeleton", "bone", "anatomy"],          "url": "https://storage.googleapis.com/ai-3d-models-bucket/skeleton.glb",      "format": "glb", "quality": 0.88},
-    {"name": "Volcano",          "tags": ["volcano", "geology", "earth"],          "url": "https://storage.googleapis.com/ai-3d-models-bucket/volcano.glb",       "format": "glb", "quality": 0.84},
-    {"name": "Space Shuttle",    "tags": ["shuttle", "space", "rocket", "nasa"],   "url": "https://storage.googleapis.com/ai-3d-models-bucket/space_shuttle.glb", "format": "glb", "quality": 0.92},
-    {"name": "Water Molecule",   "tags": ["water", "molecule", "h2o", "chemistry"],"url": "https://storage.googleapis.com/ai-3d-models-bucket/water_molecule.glb","format": "glb", "quality": 0.83},
+    {"name": "F1 Racing Car",    "tags": ["f1", "car", "race", "formula one"],     "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",       "format": "glb", "quality": 0.95},
+    {"name": "Human Heart",      "tags": ["heart", "anatomy", "organ", "medical"], "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",   "format": "glb", "quality": 0.90},
+    {"name": "Taj Mahal",        "tags": ["taj mahal", "monument", "india"],       "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",     "format": "glb", "quality": 0.88},
+    {"name": "Fighter Jet",      "tags": ["jet", "fighter", "aircraft", "plane"],  "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",   "format": "glb", "quality": 0.87},
+    {"name": "Human Brain",      "tags": ["brain", "neuron", "anatomy", "medical"],"url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",   "format": "glb", "quality": 0.91},
+    {"name": "Solar System",     "tags": ["solar system", "planet", "space"],      "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",  "format": "glb", "quality": 0.85},
+    {"name": "DNA Helix",        "tags": ["dna", "helix", "biology", "molecule"],  "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",     "format": "glb", "quality": 0.89},
+    {"name": "Eiffel Tower",     "tags": ["eiffel", "tower", "paris", "france"],   "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",  "format": "glb", "quality": 0.86},
+    {"name": "Human Skeleton",   "tags": ["skeleton", "bone", "anatomy"],          "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",      "format": "glb", "quality": 0.88},
+    {"name": "Volcano",          "tags": ["volcano", "geology", "earth"],          "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",       "format": "glb", "quality": 0.84},
+    {"name": "Space Shuttle",    "tags": ["shuttle", "space", "rocket", "nasa"],   "url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb", "format": "glb", "quality": 0.92},
+    {"name": "Water Molecule",   "tags": ["water", "molecule", "h2o", "chemistry"],"url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb","format": "glb", "quality": 0.83},
 ]
 
 
@@ -366,8 +291,16 @@ def fetch_candidates(
 
 def _score_text(query: str, text: str) -> float:
     """Keyword overlap score between query and target text."""
-    q_words = set(query.lower().split())
-    t_words = set(text.lower().split())
+    query = query.lower()
+    text = text.lower()
+    
+    # Substring bonus (e.g., 'tajmahal' inside 'taj mahal' without spaces)
+    normalized_text = text.replace(" ", "").replace("-", "")
+    if query.replace(" ", "") in normalized_text:
+        return 1.0
+        
+    q_words = set(query.split())
+    t_words = set(text.split())
     overlap  = q_words & t_words
     if not q_words:
         return 0.0
