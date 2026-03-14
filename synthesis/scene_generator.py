@@ -1,6 +1,6 @@
 """
 synthesis/scene_generator.py
-Procedural 3D scene generation using Gemini 2.5 Pro.
+Procedural 3D scene generation using Gemini 3 flash preview.
 Converts natural language prompts into SceneBlueprint JSON.
 """
 
@@ -18,28 +18,62 @@ logger = logging.getLogger(__name__)
 
 def generate_scene_blueprint(query: str, style: str = "realistic", complexity: str = "medium") -> Optional[Dict[str, Any]]:
     """
-    Generate a SceneBlueprint JSON using Gemini 2.5 Pro.
+    Generate a SceneBlueprint JSON using Gemini 3 flash preview.
     """
     if not is_available():
         logger.error("[Synthesis] Cannot generate scene: LLM client not available.")
         return None
 
     try:
-        prompt = f"User request: \"{query}\" (Style: {style}, Complexity: {complexity})\n\nGenerate SceneBlueprint JSON following the schema and rules."
+        prompt = (
+            "You are a procedural 3D scene generator for an educational visualization system.\n\n"
+            "Return ONLY valid JSON following this schema:\n"
+            "{ meta:{}, environment:{}, primitives:[], assets:[] }\n\n"
+            "Primitive types allowed: box, sphere, cylinder, cone, torus, plane.\n"
+            "Every primitive must include transform.pos, transform.rot, transform.scale arrays.\n\n"
+            "Scene complexity rules:\n"
+            "low complexity → about 6 primitives\n"
+            "medium complexity → about 12–15 primitives\n"
+            "high complexity → about 18–24 primitives\n\n"
+            "Scene planning method:\n"
+            "Step 1: determine the major structural components of the concept.\n"
+            "Step 2: distribute primitives across those components to build the structure.\n"
+            "Step 3: place primitives spatially to form a balanced 3D layout.\n\n"
+            "Planning examples:\n"
+            "heart → ventricles, atria, vessels\n"
+            "solar system → sun, planets, asteroid belt\n"
+            "atom → nucleus, electron orbit\n"
+            "molecule → atoms and bonds\n\n"
+            "Placement rules:\n"
+            "avoid overlapping objects\n"
+            "spread primitives across space\n"
+            "vary primitive sizes to represent hierarchy\n"
+            "maintain clear educational structure\n\n"
+            f"query: {query}\n"
+            f"style: {style}\n"
+            f"complexity: {complexity}\n\n"
+            "Return JSON only."
+        )
         
         logger.info(f"[Synthesis] Generating scene for: '{query}'")
-        text = generate(prompt, system_instruction=SCENE_GENERATOR_SYSTEM_PROMPT)
+        text = generate(
+            prompt,
+            system_instruction=SCENE_GENERATOR_SYSTEM_PROMPT,
+        )
         
         if not text:
             logger.error("[Synthesis] Empty response from LLM")
             return None
         
-        # Clean up the response (remove markdown if any)
-        if text.startswith("```json"):
-            text = text[len("```json"):]
-        if text.endswith("```"):
-            text = text[:-3]
+        # Clean up the response (remove markdown / preamble)
         text = text.strip()
+        if text.startswith("```"):
+            parts = text.split("```")
+            if len(parts) >= 2:
+                text = parts[1].strip()
+        start = text.find("{")
+        if start != -1:
+            text = text[start:]
         
         try:
             blueprint = json.loads(text)

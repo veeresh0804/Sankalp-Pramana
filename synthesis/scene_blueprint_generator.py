@@ -151,7 +151,7 @@ def fix_scene_blueprint(scene: Dict[str, Any]) -> Dict[str, Any]:
 
 def generate_scene_blueprint(query: str, style: str = "realistic", complexity: str = "medium") -> Optional[Dict[str, Any]]:
     """
-    Generate a SceneBlueprint JSON using Gemini 2.5 Pro.
+    Generate a SceneBlueprint JSON using Gemini 3 flash preview.
     This is a wrapper that imports and calls the scene_generator module.
     
     Args:

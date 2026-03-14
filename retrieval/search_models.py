@@ -17,6 +17,8 @@ import logging
 import os
 from typing import List, Dict, Any
 
+from rapidfuzz import fuzz
+
 from config import TOP_K_CANDIDATES
 from retrieval.dataset_loader import fetch_candidates
 
@@ -25,6 +27,21 @@ logger = logging.getLogger(__name__)
 # Configurable source list — change via env var without redeploying
 _DEFAULT_SOURCES = os.getenv("RETRIEVAL_SOURCES", "sketchfab,polyhaven,mock")
 RETRIEVAL_SOURCES: List[str] = [s.strip() for s in _DEFAULT_SOURCES.split(",") if s.strip()]
+
+
+def _compute_similarity(a: str, b: str) -> float:
+    """Token-set similarity normalized to [0,1]."""
+    return round(fuzz.token_set_ratio(a, b) / 100.0, 3)
+
+
+def _popularity(candidate: Dict[str, Any]) -> float:
+    # Prefer explicit quality; otherwise derive a tiny signal from like/view counts if present
+    if "quality" in candidate:
+        return float(candidate.get("quality", 0))
+    likes = candidate.get("like_count", 0) or candidate.get("likes", 0)
+    views = candidate.get("view_count", 0) or candidate.get("views", 0)
+    # lightweight normalization
+    return min(1.0, (likes / 5000.0) * 0.6 + (views / 50000.0) * 0.4)
 
 
 def search_models(concept: str, top_k: int = TOP_K_CANDIDATES, sources: List[str] = None) -> List[Dict[str, Any]]:
@@ -46,12 +63,32 @@ def search_models(concept: str, top_k: int = TOP_K_CANDIDATES, sources: List[str
         sources=selected_sources,
     )
 
-    if not candidates:
-        logger.warning(f"[SearchModels] All sources returned empty — using hardcoded fallback")
-        candidates = _hardcoded_fallback(concept)
+    # Filter out entries without preview/thumbnail
+    filtered: List[Dict[str, Any]] = []
+    for c in candidates:
+        if not (c.get("thumbnail") or c.get("preview")):
+            continue
 
-    logger.info(f"[SearchModels] {len(candidates)} candidates returned")
-    return candidates
+        name = c.get("name", "")
+        sim = _compute_similarity(concept, name)
+        pop = _popularity(c)
+        score = round(0.7 * sim + 0.3 * pop, 3)
+
+        enriched = dict(c)
+        enriched["keyword_score"] = sim
+        enriched["clip_score"] = score  # reused downstream by ranking_engine
+        enriched["vector_score"] = 0.0
+        enriched["final_score"] = score
+        enriched["popularity"] = pop
+        filtered.append(enriched)
+
+    if not filtered:
+        logger.warning(f"[SearchModels] All sources returned empty — using hardcoded fallback")
+        filtered = _hardcoded_fallback(concept)
+
+    filtered.sort(key=lambda x: x.get("final_score", 0), reverse=True)
+    logger.info(f"[SearchModels] {len(filtered)} candidates returned")
+    return filtered
 
 
 def deep_web_search(concept: str) -> List[Dict[str, Any]]:

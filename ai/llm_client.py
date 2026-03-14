@@ -1,6 +1,6 @@
 """
 ai/llm_client.py
-Centralized Gemini 2.5 Pro client for all LLM operations.
+Centralized Gemini 3 flash preview client for all LLM operations.
 All modules must use this client instead of direct model initialization.
 """
 
@@ -14,7 +14,7 @@ import google.generativeai as genai
 logger = logging.getLogger(__name__)
 
 # Model configuration
-GEMINI_MODEL_NAME = "gemini-2.5-pro"
+GEMINI_MODEL_NAME = "gemini-3-flash-preview"
 
 # Global model instance (lazy initialization)
 _model: Optional[genai.GenerativeModel] = None
@@ -48,7 +48,7 @@ def _initialize_model() -> Optional[genai.GenerativeModel]:
 
 def generate(prompt: str, system_instruction: Optional[str] = None) -> str:
     """
-    Generate text using Gemini 2.5 Pro.
+    Generate text using Gemini 3 flash preview.
     
     Args:
         prompt: The user prompt to send to the model.
@@ -77,7 +77,13 @@ def generate(prompt: str, system_instruction: Optional[str] = None) -> str:
         else:
             model = _model
         
-        response = model.generate_content(prompt)
+        response = model.generate_content(
+            prompt,
+            generation_config={
+                "temperature": 0.2,
+                "response_mime_type": "application/json",
+            },
+        )
         return response.text.strip()
     
     except Exception as e:

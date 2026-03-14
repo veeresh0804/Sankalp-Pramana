@@ -34,7 +34,7 @@ Category:"""
 
 def classify_intent(query: str) -> str:
     """
-    Use Gemini 2.5 Pro to classify the user's search intent.
+    Use Gemini 3 flash preview to classify the user's search intent.
     Returns the category name.
     """
     if not is_available():

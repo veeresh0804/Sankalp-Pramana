@@ -28,8 +28,6 @@ from pydantic import BaseModel, Field
 from config import APP_TITLE, APP_DESCRIPTION, APP_VERSION, MIN_CONFIDENCE, CONFIDENCE_THRESHOLD, THRESHOLD, DEEP_SEARCH_ENABLED, FALLBACK_ENABLED
 from retrieval.search_models   import search_models
 from retrieval.intent_classifier import classify_intent, get_prioritized_sources
-from vector_search.embedding_index import semantic_search, initialize_index
-from validation.clip_validator  import validate_models, _load_clip
 from ranking.ranking_engine    import rank_models
 from rag.explanation_engine     import generate_explanation
 from cache.cache_manager       import get as cache_get, set as cache_set, stats as cache_stats, clear as cache_clear
@@ -50,30 +48,12 @@ _models_ready = False
 
 def _load_models_background():
     """
-    Load AI models in a background thread.
-    Server accepts health probe immediately.
-    Strategy:
-      1. Build FAISS index (~3-5s)  → mark ready, serve keyword+vector requests
-      2. Load CLIP           (~30-60s) → upgrade to full AI validation
+    Lightweight readiness initializer (heavy models removed).
     """
     global _models_ready
     try:
-        # Step 1: FAISS index (fast — needed for vector search)
-        logger.info("[► Startup BG] Building FAISS index...")
-        initialize_index()
-
-        # Mark ready NOW — keyword + vector search works without CLIP
         _models_ready = True
-        logger.info("[✓ Startup BG] FAISS ready — /search_model now accepting requests")
-
-        # Step 2: CLIP (slow — loads in background, upgrades validation quality)
-        logger.info("[► Startup BG] Loading CLIP model (background)...")
-        try:
-            _load_clip()
-            logger.info("[✓ Startup BG] CLIP model ready — full AI validation active")
-        except Exception as e:
-            logger.warning(f"[⚠ Startup BG] CLIP not loaded (keyword fallback active): {e}")
-
+        logger.info("[✓ Startup BG] Server ready — lightweight mode (no FAISS/CLIP)")
     except Exception as e:
         logger.error(f"[✗ Startup BG] FAISS failed: {e}")
         _models_ready = True  # allow requests even if broken (fallback kicks in)
@@ -140,6 +120,8 @@ class VisualizeRequest(BaseModel):
     query:      str = Field(..., example="taj mahal", description="3D concept to visualize")
     style:      str = Field("realistic", description="Visual style")
     complexity: str = Field("medium", description="Scene complexity")
+    network:    Optional[str] = Field(None, description="Client-reported network quality: fast | slow")
+    dataSaver:  Optional[bool] = Field(False, description="Client data saver flag")
 
 
 class VisualizeResponse(BaseModel):
@@ -162,7 +144,7 @@ class VisualizeResponse(BaseModel):
 def root():
     """Health check — confirms the API is running."""
     return HealthResponse(
-        status="AI 3D Retrieval API is running ✅",
+        status="AI 3D Retrieval API is running ",
         version=APP_VERSION,
         cache=cache_stats(),
     )
@@ -190,12 +172,93 @@ def visualize(request: VisualizeRequest):
     if not query:
         raise HTTPException(status_code=422, detail="Query cannot be empty")
 
+    # Network-adaptive shortcut: skip retrieval if client reports slow network or data saver
+    if request.dataSaver or (request.network and request.network.lower() == "slow"):
+        logger.info(f"[Decision] Network/dataSaver shortcut activated (network={request.network}, dataSaver={request.dataSaver}) — generating scene directly.")
+        blueprint = generate_scene_blueprint(query, request.style, request.complexity)
+        latency = int((time.perf_counter() - t0) * 1000)
+
+        if blueprint:
+            scene_explanation = generate_explanation(query)
+            return VisualizeResponse(
+                success=True,
+                type="scene",
+                processingTime=latency,
+                source="generated",
+                data=blueprint,
+                explanation=scene_explanation
+            )
+
+        logger.warning("[Decision] Scene generation failed in network shortcut; returning minimal fallback scene.")
+        minimal_scene = {
+            "meta": {"title": "Fallback Scene"},
+            "environment": {"background": "#1a1a2e"},
+            "primitives": [
+                {
+                    "type": "box",
+                    "material": {"color": "#8ab4f8"},
+                    "transform": {"pos": [0, 0.5, 0], "rot": [0, 0, 0], "scale": [1, 1, 1]}
+                }
+            ],
+            "assets": []
+        }
+        scene_explanation = generate_explanation(query)
+        return VisualizeResponse(
+            success=True,
+            type="scene",
+            processingTime=latency,
+            source="generated",
+            data=minimal_scene,
+            explanation=scene_explanation
+        )
+
     # 1. Search Pipeline
     search_result = _run_search_pipeline(query, top_k=5)
 
     # --- PRATIBIMBAI DECISION ENGINE (THRESHOLD = 0.55) ---
     confidence = search_result["confidence"]
     explanation = search_result.get("description", "")
+
+    # Low-confidence guard: immediately prefer procedural scene generation over Box.glb
+    if confidence < THRESHOLD:
+        logger.info(f"[Decision] Confidence {confidence} < THRESHOLD {THRESHOLD}. Generating procedural scene.")
+        blueprint = generate_scene_blueprint(query, request.style, request.complexity)
+        latency = int((time.perf_counter() - t0) * 1000)
+
+        if blueprint:
+            scene_explanation = generate_explanation(query)
+            return VisualizeResponse(
+                success=True,
+                type="scene",
+                processingTime=latency,
+                source="generated",
+                data=blueprint,
+                explanation=scene_explanation
+            )
+
+        # Safety net: minimal primitive scene instead of Box.glb
+        logger.warning("[Decision] Scene generation failed at low confidence; returning minimal primitive scene.")
+        minimal_scene = {
+            "meta": {"title": "Fallback Scene"},
+            "environment": {"background": "#1a1a2e"},
+            "primitives": [
+                {
+                    "type": "box",
+                    "material": {"color": "#8ab4f8"},
+                    "transform": {"pos": [0, 0.5, 0], "rot": [0, 0, 0], "scale": [1, 1, 1]}
+                }
+            ],
+            "assets": []
+        }
+        scene_explanation = generate_explanation(query)
+        return VisualizeResponse(
+            success=True,
+            type="scene",
+            processingTime=latency,
+            source="generated",
+            data=minimal_scene,
+            explanation=scene_explanation
+        )
     
     # Decision: Return GLB if score >= THRESHOLD, else generate procedural scene
     # THRESHOLD = 0.55 per PratibimbAI specification
@@ -293,12 +356,11 @@ def _run_search_pipeline(concept: str, top_k: int) -> dict:
     logger.info(f"[Pipeline] Processing: '{concept}' (Intent: {intent}, Sources: {sources})")
 
     keyword_candidates = search_models(concept, sources=sources)
-    vector_candidates  = semantic_search(concept, top_k=top_k)
 
     # Merge & deduplicate by URL
     seen: set[str] = set()
     all_candidates: List[dict] = []
-    for c in vector_candidates + keyword_candidates:
+    for c in keyword_candidates:
         if c["url"] not in seen:
             seen.add(c["url"])
             all_candidates.append(c)
@@ -316,26 +378,8 @@ def _run_search_pipeline(concept: str, top_k: int) -> dict:
             "vector_score":  0.0,
         }]
 
-
-    # ── 3. LLM Semantic Filtering (NEW) ─────────────────────────────────────
-    all_candidates = filter_candidates(concept, all_candidates)
-
-    if not all_candidates:
-        # Fallback if filter removed everything
-        all_candidates = [{
-            "name":          "Generic 3D Object",
-            "url":           "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb",
-            "format":        "glb",
-            "quality":       0.3,
-            "keyword_score": 0.0,
-            "vector_score":  0.0,
-        }]
-
-    # ── 4. CLIP validation ──────────────────────────────────────────────────
-    validated = validate_models(all_candidates, concept)
-
-    # ── 5. Ranking ──────────────────────────────────────────────────────────
-    best = rank_models(validated)
+    # ── 4. Ranking (lightweight candidates) ──────────────────────────────────
+    best = rank_models(all_candidates)
 
     # ── 5. RAG explanation ──────────────────────────────────────────────────
     explanation = generate_explanation(concept)
@@ -345,10 +389,7 @@ def _run_search_pipeline(concept: str, top_k: int) -> dict:
     confidence = round(best.get("final_score", best.get("clip_score", 0.5)), 3)
 
     if confidence < MIN_CONFIDENCE and FALLBACK_ENABLED:
-        logger.warning(f"[Pipeline] Low confidence ({confidence}) — using fallback model")
-        best["url"]    = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/Box/glTF-Binary/Box.glb"
-        best["name"]   = "Fallback Primitive"
-        best["format"] = "glb"
+        logger.warning(f"[Pipeline] Low confidence ({confidence}) — prefer procedural scene (no GLB override)")
 
     payload = {
         "concept":     concept,

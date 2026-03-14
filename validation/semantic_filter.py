@@ -1,7 +1,7 @@
 """
 validation/semantic_filter.py
 LLM-powered semantic filtering to remove irrelevant search candidates.
-Uses Gemini 2.5 Pro to judge if a model name/description matches the user's intent.
+Uses Gemini 3 flash preview to judge if a model name/description matches the user's intent.
 """
 
 import json
@@ -28,7 +28,7 @@ Rules:
 
 def filter_candidates(query: str, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    Use Gemini 2.5 Pro to filter out irrelevant candidates.
+    Use Gemini 3 flash preview to filter out irrelevant candidates.
     Returns a subset of the input list.
     """
     if not is_available() or not candidates:

@@ -4,7 +4,7 @@ RAG (Retrieval-Augmented Generation) explanation engine.
 
 Phase 1: curated knowledge base (works offline, no API keys needed).
 Phase 2: Wikipedia / LangChain integration (see stub at bottom).
-Phase 3: LLM-powered (Gemini 2.5 Pro) — enabled via USE_LLM_RAG in config.
+Phase 3: LLM-powered (Gemini 3 flash preview) — enabled via USE_LLM_RAG in config.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def _wikipedia_lookup(concept: str) -> Optional[str]:
 
 
 def _llm_generate(concept: str) -> Optional[str]:
-    """Generate explanation using Gemini 2.5 Pro (optional — requires GEMINI_API_KEY)."""
+    """Generate explanation using Gemini 3 flash preview (optional — requires GEMINI_API_KEY)."""
     if not USE_LLM_RAG or not is_available():
         return None
     try:
