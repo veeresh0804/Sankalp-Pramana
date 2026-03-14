@@ -1,7 +1,7 @@
 """
 rag/explanation_engine.py
 Educational explanation generation for PratibimbAI.
-Uses Gemini 2.5 Pro to generate concise educational descriptions.
+Uses Gemini 3 flash preview to generate concise educational descriptions.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ Rules:
 
 def generate_explanation(query: str) -> str:
     """
-    Generate an educational explanation for the given query using Gemini 2.5 Pro.
+    Generate an educational explanation for the given query using Gemini 3 flash preview.
     
     This function wraps the knowledge_engine's generate_explanation but
     ensures LLM-based explanations are prioritized when available.
@@ -49,7 +49,7 @@ def generate_explanation(query: str) -> str:
             prompt = f"Provide a concise educational explanation for: {query}"
             result = generate(prompt, system_instruction=EXPLANATION_SYSTEM_PROMPT)
             if result:
-                logger.info("[ExplanationEngine] Generated explanation via Gemini 2.5 Pro")
+                logger.info("[ExplanationEngine] Generated explanation via Gemini 3 flash preview")
                 return result
         except Exception as e:
             logger.warning(f"[ExplanationEngine] LLM generation failed: {e}")

@@ -1,4 +1,4 @@
-USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
+from __future__ import annotations
 """
 retrieval/dataset_loader.py
 Real dataset connectors for Objaverse and Sketchfab.
@@ -10,11 +10,14 @@ Priority order when search_models.py calls fetch_candidates():
   4. Mock dataset — always-available offline fallback
 """
 
-from __future__ import annotations
+
 import logging
 import os
 import time
 from typing import List, Dict, Any, Optional
+
+USE_MOCK_DATA = os.getenv("USE_MOCK_DATA", "false").lower() == "true"
+
 
 logger = logging.getLogger(__name__)
 
